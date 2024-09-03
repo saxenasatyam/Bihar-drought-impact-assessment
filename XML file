@@ -1,0 +1,51 @@
+This XML file does not appear to have any style information associated with it. The document tree is shown below.
+<xml>
+<records>
+<record>
+<ref-type name="Dataset">59</ref-type>
+<contributors>
+<authors>
+<author>Saxena, Satyam</author>
+<author>Kishore, Avinash</author>
+<author>Veettil C, Prakashan</author>
+<author>Sherpa R, Sonam</author>
+<author>Mkondiwa, Maxwell</author>
+<author>Urfels, Anton</author>
+<author>Ajay, Anurag</author>
+<author>Poonia, Shishpal</author>
+<author>Kumar, Ajay</author>
+<author>Kumar, Anurag</author>
+<author>Kumar, Pankaj</author>
+<author>Singh K, Deepak</author>
+<author>Craufurd, Peter</author>
+<author>Malik, RK</author>
+</authors>
+</contributors>
+<titles>
+<title>Data on assessment of impacts of drought in Bihar during 2022</title>
+</titles>
+<section>2024-02-12</section>
+<dates>
+<year>2024</year>
+</dates>
+<edition>V1</edition>
+<keywords>
+<keyword>Rice</keyword>
+<keyword>Wheat</keyword>
+<keyword>Drought stress</keyword>
+<keyword>Climate change</keyword>
+<keyword>Bihar</keyword>
+<keyword>India</keyword>
+</keywords>
+<language>English</language>
+<publisher>CIMMYT Research Data & Software Repository Network</publisher>
+<reviewed-item>null</reviewed-item>
+<urls>
+<related-urls>
+<url>https://hdl.handle.net/11529/10549011</url>
+</related-urls>
+</urls>
+<electronic-resource-num>hdl/11529/10549011</electronic-resource-num>
+</record>
+</records>
+</xml>
