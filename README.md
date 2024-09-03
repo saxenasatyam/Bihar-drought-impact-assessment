@@ -30,6 +30,3 @@ Drought stress (AGROVOC) http://aims.fao.org/aos/agrovoc/c_24993
 Climate change (AGROVOC) http://aims.fao.org/aos/agrovoc/c_1666
 Bihar (AGROVOC) http://aims.fao.org/aos/agrovoc/c_901
 India (AGROVOC) http://aims.fao.org/aos/agrovoc/c_3825
-### Language 	English
-### Depositor 	Ajay, Anurag
-### Deposit Date 	2024-02-12
