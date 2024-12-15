@@ -1,0 +1,613 @@
+install.packages("lubridate")
+install.packages("survival")
+install.packages("survminer")
+library(survminer)
+library(lubridate)
+library(survival)
+library(readxl)
+library(ranger)
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+
+Survival_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx", 
+                            sheet = "R_Paddy")
+
+str(Survival_data)
+
+summary(Survival_data)
+
+# Calculate the difference in days (date of transplanting and date of harvesting)
+# Convert date strings to POSIXct objects
+transplanting_date <- as.POSIXct(Survival_data$Paddy_transplanting_date)
+harvesting_date <- as.POSIXct(Survival_data$Paddy_harvesting_date)
+transplanting_first_date <- as.POSIXct(Survival_data$Paddy_transplanting_first_date)
+harvesting_first_date <- as.POSIXct(Survival_data$Paddy_harvesting_first_date)
+
+Survival_data$days_between <- as.numeric(difftime(harvesting_date,transplanting_date, units = "days"))
+Survival_data$Days_From_first_date_of_Transplantation <- as.numeric(difftime(transplanting_date,transplanting_first_date, units = "days"))
+Survival_data$Days_From_first_date_of_harvesting <- as.numeric(difftime(harvesting_date,harvesting_first_date, units = "days"))
+# Perform Kaplan-Meier analysis
+Km_fit <- survfit(Surv(days_between, Status) ~ 1, data = Survival_data)
+summary(Km_fit)
+a <- autoplot(Km_fit)
+a + coord_cartesian(xlim = c(60, 200))
+
+library(reshape2)
+# Next, we look at survival curves by Districts.
+# District wise
+Selected_survial_variable <- Survival_data[-c(1,3,4,7,8,9)]
+Selected_melted_survial_variable <- melt(Selected_survial_variable, id.vars = c("Districts", "Drought_faced","Status"))
+
+Km_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_fit)
+p + coord_cartesian(xlim = c(0, 200))
+
+
+# Cox Proportional Hazards Model
+
+cox <- coxph(Surv(days_between, Status) ~  Districts + Drought_faced, data = Survival_data)
+summary(cox)
+cox_fit <- survfit(cox)
+#plot(cox_fit, main = "cph model", xlab="Days")
+c <- autoplot(cox_fit)
+c + coord_cartesian(xlim = c(60, 200))
+
+
+aa_fit <- aareg(Surv(days_between, Status) ~  Districts + Drought_faced, data = Survival_data)
+d <- autoplot(aa_fit)
+d + coord_cartesian(xlim = c(60, 180))
+
+
+# ranger model
+r_fit <- ranger(Surv(days_between, Status) ~  Districts + Drought_faced, data = Survival_data,
+                mtry = 1,
+                importance = "permutation",
+                splitrule = "extratrees",
+                verbose = TRUE)
+
+
+# Average the survival models
+death_times <- r_fit$unique.death.times 
+surv_prob <- data.frame(r_fit$survival)
+avg_prob <- sapply(surv_prob,mean)
+
+plot(r_fit$unique.death.times,r_fit$survival[1,], 
+     type = "l", 
+     ylim = c(0,1),
+     col = "red",
+     xlab = "Days",
+     ylab = "survival",
+     main = "Paddy Survival Curves")
+
+cols <- colors()
+for (n in sample(c(2:dim(Survival_data)[1]), 20)){
+  lines(r_fit$unique.death.times, r_fit$survival[n,], type = "l", col = cols[n])
+}
+lines(death_times, avg_prob, lwd = 2)
+legend(500, 0.7, legend = c('Average = black'))
+
+
+vi <- data.frame(sort(round(r_fit$variable.importance, 4), decreasing = TRUE))
+names(vi) <- "importance"
+head(vi)
+
+cat("Prediction Error = 1 - Harrell's c-index = ", r_fit$prediction.error)
+
+
+# Set up for ggplot
+kmi <- rep("KM",length(Km_fit$time))
+km_df <- data.frame(Km_fit$time,Km_fit$surv,kmi)
+names(km_df) <- c("Time","Surv","Model")
+
+coxi <- rep("Cox",length(cox_fit$time))
+cox_df <- data.frame(cox_fit$time,cox_fit$surv,coxi)
+names(cox_df) <- c("Time","Surv","Model")
+
+rfi <- rep("RF",length(r_fit$unique.death.times))
+rf_df <- data.frame(r_fit$unique.death.times,avg_prob,rfi)
+names(rf_df) <- c("Time","Surv","Model")
+
+plot_df <- rbind(km_df,cox_df,rf_df)
+
+p <- ggplot(plot_df, aes(x = Time, y = Surv, color = Model))
+p + geom_line()
+
+
+
+# Create Kaplan-Meier survival curve plot
+#g_km <- ggsurvplot(km_fit, data = Survival_data, palette = c("blue"), legend.title = "Drought faced")
+
+# Create Kaplan-Meier survival curve plot
+g_km <- ggsurvplot(km_fit, data = Survival_data, palette = c("darkgreen", "red"), legend.title = " ",
+                   title = "Kaplan-Meier Survival Curves",
+                   xlab = "Time (days)",
+                   ylab = "Survival Probability",
+                   pval = TRUE,
+                   pval.coord = c(250, 0.8),
+                   pval.method = TRUE,
+                   pval.size = 3,
+                   conf.int = TRUE,
+                   conf.int.style = "ribbon",
+                   conf.int.alpha = 0.3,
+                   censor.shape = 4,
+                   censor.size = 3,
+                   censor.color = "black")
+
+# Print the enhanced survival curve plot
+print(g_km)
+
+
+# Perform Cox proportional hazards model analysis
+cox_model <- coxph(surv_obj ~ Survival_data$Drought_faced)
+
+# Display the summary of the Cox model
+summary(cox_model)
+
+
+
+
+
+
+
+print(Call: survfit(formula = surv_obj ~ Survival_data$Drought_faced)
+
+Survival_data$Drought_faced=0:
+  - At the start of the observation, there were n.risk (number at risk) individuals with drought occurrence 
+(Drought_faced) equal to 0.
+- During the course of the observation, n.event events (drought occurrences) were recorded for this group.
+- The estimated survival probability at the end of the observation (last time point) is the survival value (0.99554) with a standard error of 0.00445.
+- The lower 95% confidence interval for the survival probability at the end is 0.986844, and the upper 95% confidence interval is 1.0000.
+
+Survival_data$Drought_faced=1:
+  - At the start of the observation, there were n.risk individuals with drought occurrence (Drought_faced) equal to 1.
+- During the course of the observation, n.event events (drought occurrences) were recorded for this group.
+- The estimated survival probability at different time points is presented, e.g., at time 70, the survival probability is 0.99554, with a standard error of 0.00445.
+- Similarly, survival probabilities are provided for subsequent time points along with standard errors and confidence intervals.
+)
+
+##------------------code from the history------------------------##
+
+Gap_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                       sheet = "Gap")
+library(survminer)
+library(lubridate)
+library(survival)
+library(readxl)
+library(ranger)
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+library(survminer)
+library(lubridate)
+library(survival)
+library(readxl)
+library(ranger)
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+Gap_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                       sheet = "Gap")
+View(Gap_data)
+names(Survival_data)
+names(Gap_data)
+harvesting_date <- as.POSIXct(Gap_data$Paddy_harvesting_date)
+harvesting_date <- as.POSIXct(Gap_data$Wheat_sowing_date)
+str(Gap_data)
+library(survminer)
+library(lubridate)
+library(survival)
+library(readxl)
+library(ranger)
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+Survival_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                            sheet = "R_Paddy")
+View(Survival_data)
+str(Survival_data)
+names(Survival_data)
+# Calculate the difference in days (date of transplanting and date of harvesting)
+# Convert date strings to POSIXct objects
+transplanting_date <- as.POSIXct(Survival_data$Paddy_transplanting_date)
+harvesting_date <- as.POSIXct(Survival_data$Paddy_harvesting_date)
+Survival_data$days_between <- as.numeric(difftime(harvesting_date,transplanting_date, units = "days"))
+Km_fit <- survfit(Surv(days_between, Drought_faced) ~ 1, data = Survival_data)
+# Create a survival object
+surv_obj <- Surv(time = Survival_data$days_between, event = Survival_data$Drought_faced)
+# Perform Kaplan-Meier analysis
+km_fit <- survfit(surv_obj ~ Survival_data$Drought_faced)
+summary(km_fit)
+# Create Kaplan-Meier survival curve plot
+#g_km <- ggsurvplot(km_fit, data = Survival_data, palette = c("blue"), legend.title = "Drought faced")
+# Create Kaplan-Meier survival curve plot
+g_km <- ggsurvplot(km_fit, data = Survival_data, palette = c("darkgreen", "red"), legend.title = " ",
+                   title = "Kaplan-Meier Survival Curves",
+                   xlab = "Time (days)",
+                   ylab = "Survival Probability",
+                   pval = TRUE,
+                   pval.coord = c(250, 0.8),
+                   pval.method = TRUE,
+                   pval.size = 3,
+                   conf.int = TRUE,
+                   conf.int.style = "ribbon",
+                   conf.int.alpha = 0.3,
+                   censor.shape = 4,
+                   censor.size = 3,
+                   censor.color = "black")
+# Print the enhanced survival curve plot
+print(g_km)
+sowing_date <- as.POSIXct(Gap_data$Wheat_sowing_date)
+harvesting_date <- as.POSIXct(Gap_data$Paddy_harvesting_date)
+sowing_date <- as.POSIXct(Gap_data$Wheat_sowing_date)
+Gap_data$days_between <- as.numeric(difftime(harvesting_date,sowing_date, units = "days"))
+Gap_data$days_between <- as.numeric(difftime(sowing_date,harvesting_date, units = "days"))
+write.csv(Gap_data,"Gap_data.csv")
+Gap_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                       sheet = "Gap2")
+Gap_data
+surv_obj <- Surv(time = Gap_data$days_between, event = Gap_data$Drought_faced)
+km_fit <- survfit(surv_obj ~ Gap_data$Drought_faced)
+summary(km_fit)
+g_km <- ggsurvplot(km_fit, data = Gap_data, palette = c("darkgreen", "red"), legend.title = " ",
+                   title = "Kaplan-Meier Survival Curves",
+                   xlab = "Time (days)",
+                   ylab = "Survival Probability",
+                   pval = TRUE,
+                   pval.coord = c(250, 0.8),
+                   pval.method = TRUE,
+                   pval.size = 3,
+                   conf.int = TRUE,
+                   conf.int.style = "ribbon",
+                   conf.int.alpha = 0.3,
+                   censor.shape = 4,
+                   censor.size = 3,
+                   censor.color = "black")
+# Print the enhanced survival curve plot
+print(g_km)
+km_fit <- survfit(surv_obj ~ Gap_data$Districts)
+summary(km_fit)
+g_km <- ggsurvplot(km_fit, data = Gap_data, palette = c("darkgreen", "red"), legend.title = " ",
+                   title = "Kaplan-Meier Survival Curves",
+                   xlab = "Time (days)",
+                   ylab = "Survival Probability",
+                   pval = TRUE,
+                   pval.coord = c(250, 0.8),
+                   pval.method = TRUE,
+                   pval.size = 3,
+                   conf.int = TRUE,
+                   conf.int.style = "ribbon",
+                   conf.int.alpha = 0.3,
+                   censor.shape = 4,
+                   censor.size = 3,
+                   censor.color = "black")
+# Print the enhanced survival curve plot
+print(g_km)
+Gap_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                       sheet = "Gap2")
+# Create a survival object
+surv_obj <- Surv(time = Gap_data$days_between, event = Gap_data$Status)
+km_fit <- survfit(surv_obj ~ Gap_data$Status)
+g_km <- ggsurvplot(km_fit, data = Gap_data, palette = c("darkgreen", "red"), legend.title = " ",
+                   title = "Kaplan-Meier Survival Curves",
+                   xlab = "Time (days)",
+                   ylab = "Survival Probability",
+                   pval = TRUE,
+                   pval.coord = c(250, 0.8),
+                   pval.method = TRUE,
+                   pval.size = 3,
+                   conf.int = TRUE,
+                   conf.int.style = "ribbon",
+                   conf.int.alpha = 0.3,
+                   censor.shape = 4,
+                   censor.size = 3,
+                   censor.color = "black")
+# Print the enhanced survival curve plot
+print(g_km)
+km_fit <- survfit(surv_obj ~ 1)
+# Create Kaplan-Meier survival curve plot
+g_km <- ggsurvplot(km_fit, data = Gap_data, palette = c("darkgreen", "red"), legend.title = " ",
+                   title = "Kaplan-Meier Survival Curves",
+                   xlab = "Time (days)",
+                   ylab = "Survival Probability",
+                   pval = TRUE,
+                   pval.coord = c(250, 0.8),
+                   pval.method = TRUE,
+                   pval.size = 3,
+                   conf.int = TRUE,
+                   conf.int.style = "ribbon",
+                   conf.int.alpha = 0.3,
+                   censor.shape = 4,
+                   censor.size = 3,
+                   censor.color = "black")
+# Print the enhanced survival curve plot
+print(g_km)
+# Create a survival object
+surv_obj <- Surv(time = Gap_data$Paddy_harvesting_date, event = Gap_data$Status)
+surv_obj <- Surv(time = Gap_data$Paddy_harvesting_date, event = Gap_data$Status)
+km_fit <- survfit(surv_obj ~ 1)
+# Create a survival object
+Gap_data$Paddy_harvesting_date <- as.numeric(Paddy_harvesting_date)
+# Create a survival object
+Gap_data$Paddy_harvesting_date <- as.numeric(Gap_data$Paddy_harvesting_date)
+Gap_data$days_between <- as.numeric(difftime(sowing_date,harvesting_date, units = "days"))
+Gap_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                       sheet = "Gap2")
+Gap_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                       sheet = "Gap2")
+Gap_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                       sheet = "Gap2")
+surv_obj <- Surv(time = Gap_data$days_between, event = Gap_data$)
+surv_obj <- Surv(time = Gap_data$days_between, event = Gap_data$Districts)
+surv_obj <- Surv(time = Gap_data$days_between, event = Gap_data$Status)
+km_fit <- survfit(surv_obj ~ 1)
+summary(km_fit)
+g_km <- ggsurvplot(km_fit, data = Gap_data, palette = c("darkgreen", "red"), legend.title = " ",
+                   title = "Kaplan-Meier Survival Curves",
+                   xlab = "Time (days)",
+                   ylab = "Survival Probability",
+                   pval = TRUE,
+                   pval.coord = c(250, 0.8),
+                   pval.method = TRUE,
+                   pval.size = 3,
+                   conf.int = TRUE,
+                   conf.int.style = "ribbon",
+                   conf.int.alpha = 0.3,
+                   censor.shape = 4,
+                   censor.size = 3,
+                   censor.color = "black")
+# Print the enhanced survival curve plot
+print(g_km)
+km_fit <- survfit(surv_obj ~ Gap_data$Districts)
+# Create Kaplan-Meier survival curve plot
+g_km <- ggsurvplot(km_fit, data = Gap_data, palette = c("darkgreen", "red"), legend.title = " ",
+                   title = "Kaplan-Meier Survival Curves",
+                   xlab = "Time (days)",
+                   ylab = "Survival Probability",
+                   pval = TRUE,
+                   pval.coord = c(250, 0.8),
+                   pval.method = TRUE,
+                   pval.size = 3,
+                   conf.int = TRUE,
+                   conf.int.style = "ribbon",
+                   conf.int.alpha = 0.3,
+                   censor.shape = 4,
+                   censor.size = 3,
+                   censor.color = "black")
+# Print the enhanced survival curve plot
+print(g_km)
+# Print the enhanced survival curve plot
+print(g_km)
+km_fit <- survfit(surv_obj ~ Gap_data$Drought_faced)
+# Create Kaplan-Meier survival curve plot
+g_km <- ggsurvplot(km_fit, data = Gap_data, palette = c("darkgreen", "red"), legend.title = " ",
+                   title = "Kaplan-Meier Survival Curves",
+                   xlab = "Time (days)",
+                   ylab = "Survival Probability",
+                   pval = TRUE,
+                   pval.coord = c(250, 0.8),
+                   pval.method = TRUE,
+                   pval.size = 3,
+                   conf.int = TRUE,
+                   conf.int.style = "ribbon",
+                   conf.int.alpha = 0.3,
+                   censor.shape = 4,
+                   censor.size = 3,
+                   censor.color = "black")
+# Print the enhanced survival curve plot
+print(g_km)
+library(survminer)
+library(lubridate)
+library(survival)
+library(readxl)
+library(ranger)
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+library(survminer)
+library(lubridate)
+library(survival)
+library(readxl)
+library(ranger)
+library(ggplot2)
+library(dplyr)
+library(ggfortify)
+Survival_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                            sheet = "R_Paddy")
+str(Survival_data)
+summary(Survival_data)
+transplanting_date <- as.POSIXct(Survival_data$Paddy_transplanting_date)
+harvesting_date <- as.POSIXct(Survival_data$Paddy_harvesting_date)
+Survival_data$days_between <- as.numeric(difftime(harvesting_date,transplanting_date, units = "days"))
+# Perform Kaplan-Meier analysis
+Km_fit <- survfit(Surv(days_between, Status) ~ 1, data = Survival_data)
+summary(Km_fit)
+a <- autoplot(Km_fit)
+a + coord_cartesian(xlim = c(60, 200))
+Km_district_fit <- survfit(Surv(days_between, Status) ~  Districts + Drought_faced, data= Survival_data)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(60, 200))
+p <- autoplot(Km_district_fit)
+View(Survival_data)
+Survival_data$First_date_of_transplant <- rep(c("x"), each = 50)
+x
+Survival_data$First_date_of_transplant <- rep(c("x"))
+Survival_data$First_date_of_transplant <- rep(c("2022-07-08"))
+str(Survival_data)
+Survival_data$days_From_first_day_of_Transplantation <- as.numeric(difftime(transplanting_date,First_date_of_transplant, units = "days"))
+Transplant_first_date <- as.POSIXct(Survival_data$First_date_of_transplant)
+Survival_data$days_From_first_day_of_Transplantation <- as.numeric(difftime(transplanting_date,First_date_of_transplant, units = "days"))
+Transplant_first_date <- as.POSIXct(Survival_data$First_date_of_transplant)
+str(Survival_data)
+Survival_data$days_From_first_day_of_Transplantation <- as.numeric(difftime(transplanting_date,First_date_of_transplant, units = "days"))
+Survival_data$days_From_first_day_of_Transplantation <- as.numeric(difftime(transplanting_date,First_date_of_transplant, units = "days"))
+Transplant_first_date <- as.POSIXct(Survival_data$First_date_of_transplant)
+Survival_data$days_From_first_day_of_Transplantation <- as.numeric(difftime(transplanting_date,Transplant_first_date, units = "days"))
+Survival_data$Days_From_first_date_of_Transplantation <- as.numeric(difftime(transplanting_date,Transplant_first_date, units = "days"))
+Survival_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                            sheet = "R_Paddy")
+str(Survival_data)
+summary(Survival_data)
+transplanting_date <- as.POSIXct(Survival_data$Paddy_transplanting_date)
+harvesting_date <- as.POSIXct(Survival_data$Paddy_harvesting_date)
+Survival_data$days_between <- as.numeric(difftime(harvesting_date,transplanting_date, units = "days"))
+Survival_data$First_date_of_transplant <- rep(c("2022-07-08"))
+str(Survival_data)
+First_date_of_transplant <- as.POSIXct(Survival_data$First_date_of_transplant)
+str(Survival_data)
+Survival_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                            sheet = "R_Paddy")
+str(Survival_data)
+Survival_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                            sheet = "R_Paddy")
+str(Survival_data)
+First_date_of_transplant <- as.POSIXct(Survival_data$First_date_of_transplant)
+transplanting_date <- as.POSIXct(Survival_data$Paddy_transplanting_date)
+harvesting_date <- as.POSIXct(Survival_data$Paddy_harvesting_date)
+str(Survival_data)
+Survival_data$First_date_of_transplant <- rep(c("2022-07-08"))
+Survival_data$days_between <- as.numeric(difftime(harvesting_date,transplanting_date, units = "days"))
+First_date_of_transplant <- as.POSIXct(Survival_data$First_date_of_transplant)
+Survival_data$Days_From_first_date_of_Transplantation <- as.numeric(difftime(transplanting_date,Transplant_first_date, units = "days"))
+First_date_of_transplant <- as.POSIXct(Survival_data$First_date_of_transplant, format = '%Y %M %D')
+str(Survival_data)
+First_date_of_transplant <- as.POSIXct(Survival_data$First_date_of_transplant, format = '%d %b %Y')
+str(Survival_data)
+Survival_data$Days_From_first_date_of_Transplantation <- as.numeric(difftime(transplanting_date,Transplant_first_date, units = "days"))
+Survival_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                            sheet = "R_Paddy")
+str(Survival_data)
+summary(Survival_data)
+transplanting_date <- as.POSIXct(Survival_data$Paddy_transplanting_date)
+harvesting_date <- as.POSIXct(Survival_data$Paddy_harvesting_date)
+transplanting_first_date <- as.POSIXct(Survival_data$Paddy_transplanting_first_date)
+harvesting_first_date <- as.POSIXct(Survival_data$Paddy_harvesting_first_date)
+Survival_data$days_between <- as.numeric(difftime(harvesting_date,transplanting_date, units = "days"))
+Survival_data$Days_From_first_date_of_Transplantation <- as.numeric(difftime(transplanting_date,Transplant_first_date, units = "days"))
+Survival_data$Days_From_first_date_of_Transplantation <- as.numeric(difftime(transplanting_date,transplanting_first_date, units = "days"))
+Survival_data$Days_From_first_date_of_harvesting <- as.numeric(difftime(harvesting_date,harvesting_first_date, units = "days"))
+# Next, we look at survival curves by Districts.
+# District wise
+Km_district_fit <- survfit(Surv(days_between, Status) ~  Drought_faced, data= Survival_data)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(60, 200))
+# Next, we look at survival curves by Districts.
+# District wise
+Km_district_fit <- survfit(Surv(days_between, Status) ~  Districts , data= Survival_data)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(60, 200))
+# Next, we look at survival curves by Districts.
+# District wise
+Km_district_fit <- survfit(Surv(Days_From_first_date_of_Transplantation, Days_From_first_date_of_harvesting) ~  Districts , data= Survival_data)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(60, 200))
+Km_district_fit <- survfit(Surv(Days_From_first_date_of_Transplantation, Days_From_first_date_of_harvesting) ~  Districts , data= Survival_data)
+# Next, we look at survival curves by Districts.
+# District wise
+Km_district_fit <- survfit(Surv(Days_From_first_date_of_Transplantation, Status) ~  Districts , data= Survival_data)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(60, 200))
+# Next, we look at survival curves by Districts.
+# District wise
+Selected_survial_variable <- Survival_data[-c(1,3,4,7,8,9)]
+View(Selected_survial_variable)
+names(Selected_survial_variable)
+Selected_melted_survial_variable <- melt(Selected_survial_variable, id.vars = c("Districts", "Drought_faced","Status"))
+Selected_melted_survial_variable <- melt(Selected_survial_variable, id.vars = c("Districts", "Drought_faced","Status"))
+library(reshape)
+library(reshape)
+library(reshape2)
+library(reshape2)
+Selected_melted_survial_variable <- melt(Selected_survial_variable, id.vars = c("Districts", "Drought_faced","Status"))
+View(Selected_melted_survial_variable)
+Km_district_fit <- survfit(Surv(value, variable) ~  Districts , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(60, 200))
+Km_district_fit <- survfit(Surv(value, variable) ~  1 , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(60, 200))
+Km_district_fit <- survfit(Surv(value, variable) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(60, 200))
+Km_district_fit <- survfit(Surv(value, Status) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(60, 200))
+Km_district_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(60, 200))
+Km_district_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian
+Km_district_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian
+p + coord_cartesian(xlim = c(0, 100))
+Km_district_fit <- survfit(Surv(value, Status) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Km_district_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Km_district_fit <- survfit(Surv(value, variable) ~  Drought_faced , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Km_district_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Km_district_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(0, 100))
++theme_minimal()
+Km_district_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_district_fit)
+p + coord_cartesian(xlim = c(0, 100))
++theme_minimal()
+Km_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Km_fit <- survfit(Surv(value, Drought_faced) ~  value , data= Selected_melted_survial_variable)
+p <- autoplot(Km_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Km_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Km_fit <- survfit(Surv(value, variable) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Km_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Survival_data <- read_excel("C:/Users/SSAXENA/OneDrive - CIMMYT/Data/Drought_Impact_Survey/Drought survey/Face_to_face_survey/Survival Analysis/Survival_data.xlsx",
+                            sheet = "R_Paddy")
+str(Survival_data)
+summary(Survival_data)
+# Calculate the difference in days (date of transplanting and date of harvesting)
+# Convert date strings to POSIXct objects
+transplanting_date <- as.POSIXct(Survival_data$Paddy_transplanting_date)
+harvesting_date <- as.POSIXct(Survival_data$Paddy_harvesting_date)
+transplanting_first_date <- as.POSIXct(Survival_data$Paddy_transplanting_first_date)
+harvesting_first_date <- as.POSIXct(Survival_data$Paddy_harvesting_first_date)
+Survival_data$days_between <- as.numeric(difftime(harvesting_date,transplanting_date, units = "days"))
+Survival_data$Days_From_first_date_of_Transplantation <- as.numeric(difftime(transplanting_date,transplanting_first_date, units = "days"))
+Survival_data$Days_From_first_date_of_harvesting <- as.numeric(difftime(harvesting_date,harvesting_first_date, units = "days"))
+Selected_survial_variable <- Survival_data[-c(1,3,4,7,8,9)]
+Selected_melted_survial_variable <- melt(Selected_survial_variable, id.vars = c("Districts", "Drought_faced","Status"))
+Km_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Selected_survial_variable <- Survival_data[-c(1,3,4,7,8,9)]
+Selected_melted_survial_variable <- melt(Selected_survial_variable, id.vars = c("Districts", "Drought_faced","Status"))
+Km_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Km_fit <- survfit(Surv(value, variable) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_fit)
+p + coord_cartesian(xlim = c(0, 100))
+Km_fit <- survfit(Surv(value, variable) ~  Drought_faced , data= Selected_melted_survial_variable)
+p <- autoplot(Km_fit)
+p + coord_cartesian(xlim = c(0, 100))
+p + coord_cartesian(xlim = c(0, 200))
+Km_fit <- survfit(Surv(value, Drought_faced) ~  variable , data= Selected_melted_survial_variable)
+p <- autoplot(Km_fit)
+p + coord_cartesian(xlim = c(0, 200))
+
